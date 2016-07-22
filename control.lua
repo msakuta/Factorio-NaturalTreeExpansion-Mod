@@ -1,9 +1,10 @@
+require "config"
 
 local freq = 16
 local freq2 = freq ^ 2
 local totalgen = 0
 local chunksize = 32
-local tickfreq = 60
+local original_tree_count = 0
 
 local function fmod(a,m)
 	return a - math.floor(a / m) * m
@@ -16,6 +17,28 @@ local function test_entity(surface,area,names)
 		end
 	end
 	return true
+end
+
+local function test_tile(surface,newpos,names)
+	tile = surface.get_tile(newpos[1],newpos[2])
+	if not tile.valid then
+		return false
+	end
+	for i = 1,#names do
+		if tile.name == names[i] then
+			return false
+		end
+	end
+	return true
+end
+
+local function eqany(a,b)
+	for i = 1,#b do
+		if a == b[i] then
+			return true
+		end
+	end
+	return false
 end
 
 local shuffle_src = {}
@@ -35,8 +58,8 @@ while 0 < #shuffle_src do
 end
 
 function on_tick(event)
-	if game.tick % tickfreq == 0 then
-		local m = math.floor(game.tick / tickfreq)
+	if game.tick % tree_expansion_frequency == 0 then
+		local m = math.floor(game.tick / tree_expansion_frequency)
 		if m == 0 then
 			local str = ""
 			for i = 1,#shuffle do
@@ -46,7 +69,6 @@ function on_tick(event)
 		end
 		local num = 0
 		local allnum = 0
-		local chunkBuf = {}
 		local str = ""
 		local mm = m % #shuffle + 1
 		local mx = shuffle[mm] % freq
@@ -62,24 +84,35 @@ function on_tick(event)
 				if 0 < c then
 					local trees = surface.find_entities_filtered{area = area, type = "tree"}
 					if 0 < #trees then
+						local nondeadtree = false
 						local tree = trees[math.random(#trees)]
-						local newpos
-						local success = false
+						-- Draw trees until we get a non-dead tree.
 						for try = 1,10 do
-							newpos = {tree.position.x + (math.random(-5,5)), tree.position.y + (math.random(-5,5))}
-							if 0 == surface.count_entities_filtered{area = {{newpos[1] - 1, newpos[2] - 1}, {newpos[1] + 1, newpos[2] + 1}}, type = "tree"} and
-							test_entity(surface, {{newpos[1] - 2, newpos[2] - 2}, {newpos[1] + 2, newpos[2] + 2}}, {"turret", "ammo-turret", "mining-drill", "wall"}) then
-								success = true
+							if not eqany(tree.name, {"dead-tree", "dry-tree", "dead-grey-trunk", "dry-hairy-tree", "dead-dry-hairy-tree"}) then
+								nondeadtree = true
 								break
 							end
 						end
-						if success then
-							num = num + 1
-							chunkBuf[num] = chunk
-
-							surface.create_entity{name = tree.name, position = newpos, force = tree.force}
-							if num < 5 then
-								str = str .. "(" .. chunk.x .. ", " .. chunk.y .. ")" .. c .. "[" .. newpos[1] .. "," .. newpos[2] .. "],"
+						if nondeadtree then
+							local newpos
+							local success = false
+							-- Try until randomly generated position does not block something.
+							for try = 1,10 do
+								newpos = {tree.position.x + (math.random(-5,5)), tree.position.y + (math.random(-5,5))}
+								local newarea = {{newpos[1] - 1, newpos[2] - 1}, {newpos[1] + 1, newpos[2] + 1}}
+								local newarea2 = {{newpos[1] - 2, newpos[2] - 2}, {newpos[1] + 2, newpos[2] + 2}}
+								if 0 == surface.count_entities_filtered{area = newarea, type = "tree"} and
+								test_tile(surface, newpos, {"out-of-map", "deepwater", "deepwater-green", "water",
+									"water-green", "grass", "sand", "sand-dark", "stone-path", "concrete", "hazard-concrete-left", "hazard-concrete-right",
+									"dirt", "dirt-dark"}) and
+								0 == surface.count_entities_filtered{area = newarea2, force = "player"} then
+									success = true
+									break
+								end
+							end
+							if success then
+								num = num + 1
+								surface.create_entity{name = tree.name, position = newpos, force = tree.force}
 							end
 						end
 					end
@@ -87,7 +120,28 @@ function on_tick(event)
 			end
 		end
 		totalgen = totalgen + num
-		if m % 10 == 0 then
+		if m % 1 == 0 then
+			local function counttrees()
+				local c=0
+				for i=1,9 do
+					c = c + game.forces.neutral.get_entity_count("tree-" .. string.format("%02d", i))
+				end
+				return c
+			end
+
+			if not game.players[1].gui.left.trees then
+				game.players[1].gui.left.add{type="frame", name="trees", caption="Trees", direction="vertical"}
+				original_tree_count = game.surfaces[1].count_entities_filtered{area={{-10000,-10000},{10000,10000}},type="tree"}
+				game.players[1].gui.left.trees.add{type="label",name="m",caption="Cycle: " .. m % #shuffle .. "/" .. #shuffle}
+				game.players[1].gui.left.trees.add{type="label",name="total",caption="Total trees: " .. counttrees() .. "/" .. original_tree_count}
+				game.players[1].gui.left.trees.add{type="label",name="count",caption="Added trees: " .. totalgen}
+			else
+				game.players[1].gui.left.trees.m.caption = "Cycle: " .. m % #shuffle .. "/" .. #shuffle
+				game.players[1].gui.left.trees.total.caption = "Total trees: " .. counttrees() .. "/" .. (original_tree_count + totalgen)
+				game.players[1].gui.left.trees.count.caption = "Added trees: " .. totalgen
+			end
+		end
+		if m % 1000 == 0 and false then
 			game.players[1].print("[" .. m .. "] Chunks[" .. num .. "/" .. allnum .. "](" .. totalc .. ")" .. totalgen .. ": " .. str)
 		end
 	end
