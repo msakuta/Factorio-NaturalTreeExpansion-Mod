@@ -120,7 +120,9 @@ function on_tick(event)
 			end
 		end
 		totalgen = totalgen + num
-		if m % 1 == 0 then
+		if enable_debug_window then
+			-- LuaSurface.count_entities_filtered() is slow, LuaForce.get_entity_count() is much faster, but
+			-- it needs entity name argument, not type. So we must repeat it for all types of trees.
 			local function counttrees()
 				local c=0
 				for i=1,9 do
@@ -131,18 +133,15 @@ function on_tick(event)
 
 			if not game.players[1].gui.left.trees then
 				game.players[1].gui.left.add{type="frame", name="trees", caption="Trees", direction="vertical"}
-				original_tree_count = game.surfaces[1].count_entities_filtered{area={{-10000,-10000},{10000,10000}},type="tree"}
+				-- original_tree_count = game.surfaces[1].count_entities_filtered{area={{-10000,-10000},{10000,10000}},type="tree"}
 				game.players[1].gui.left.trees.add{type="label",name="m",caption="Cycle: " .. m % #shuffle .. "/" .. #shuffle}
-				game.players[1].gui.left.trees.add{type="label",name="total",caption="Total trees: " .. counttrees() .. "/" .. original_tree_count}
+				game.players[1].gui.left.trees.add{type="label",name="total",caption="Total trees: " .. counttrees()}
 				game.players[1].gui.left.trees.add{type="label",name="count",caption="Added trees: " .. totalgen}
 			else
 				game.players[1].gui.left.trees.m.caption = "Cycle: " .. m % #shuffle .. "/" .. #shuffle
-				game.players[1].gui.left.trees.total.caption = "Total trees: " .. counttrees() .. "/" .. (original_tree_count + totalgen)
+				game.players[1].gui.left.trees.total.caption = "Total trees: " .. counttrees()
 				game.players[1].gui.left.trees.count.caption = "Added trees: " .. totalgen
 			end
-		end
-		if m % 1000 == 0 and false then
-			game.players[1].print("[" .. m .. "] Chunks[" .. num .. "/" .. allnum .. "](" .. totalc .. ")" .. totalgen .. ": " .. str)
 		end
 	end
 end
