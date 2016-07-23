@@ -105,23 +105,17 @@ local function update_player_map(m, surface)
 end
 
 function on_tick(event)
-	-- First, cache player map data by searching player owned entities.
-	if game.tick % tree_expansion_frequency == 0 then
-		local m = math.floor(game.tick / tree_expansion_frequency)
-		update_player_map(m, game.surfaces[1])
+	-- LuaSurface.count_entities_filtered() is slow, LuaForce.get_entity_count() is much faster, but
+	-- it needs entity name argument, not type. So we must repeat it for all types of trees.
+	local function count_trees()
+		local c=0
+		for i=1,#tree_names do
+			c = c + game.forces.neutral.get_entity_count(tree_names[i])
+		end
+		return c
 	end
 
-	-- Delay the loop as half a phase of update_player_map to reduce
-	-- 'petit-freeze' duration as possible.
-	if math.floor(game.tick + tree_expansion_frequency / 2) % tree_expansion_frequency == 0 then
-		local m = math.floor(game.tick / tree_expansion_frequency)
-		if m == 0 then
-			local str = ""
-			for i = 1,#shuffle do
-				str = str .. shuffle[i] ..","
-			end
-			game.players[1].print("[" .. str .. "]")
-		end
+	local function grow_trees(m)
 		local num = 0
 		local allnum = 0
 		local str = ""
@@ -196,16 +190,27 @@ function on_tick(event)
 			end
 		end
 		totalgen = totalgen + num
+	end
+
+	-- First, cache player map data by searching player owned entities.
+	if game.tick % tree_expansion_frequency == 0 then
+		local m = math.floor(game.tick / tree_expansion_frequency)
+		update_player_map(m, game.surfaces[1])
+	end
+
+	-- Delay the loop as half a phase of update_player_map to reduce
+	-- 'petit-freeze' duration as possible.
+	if math.floor(game.tick + tree_expansion_frequency / 2) % tree_expansion_frequency == 0 then
+		local m = math.floor(game.tick / tree_expansion_frequency)
+
+		-- As number of trees grows, the growth rate decreases, maxes at max_trees.
+		local numTrees = count_trees()
+		if numTrees < max_trees * tree_decrease_start or
+			numTrees < max_trees * (tree_decrease_start + math.random() * (1 - tree_decrease_start)) then
+			grow_trees(m)
+		end
+
 		if enable_debug_window then
-			-- LuaSurface.count_entities_filtered() is slow, LuaForce.get_entity_count() is much faster, but
-			-- it needs entity name argument, not type. So we must repeat it for all types of trees.
-			local function counttrees()
-				local c=0
-				for i=1,#tree_names do
-					c = c + game.forces.neutral.get_entity_count(tree_names[i])
-				end
-				return c
-			end
 
 			-- Return [rows,active,visited] playermap chunks
 			local function countPlayerMap()
@@ -226,12 +231,12 @@ function on_tick(event)
 				game.players[1].gui.left.add{type="frame", name="trees", caption="Trees", direction="vertical"}
 				-- original_tree_count = game.surfaces[1].count_entities_filtered{area={{-10000,-10000},{10000,10000}},type="tree"}
 				game.players[1].gui.left.trees.add{type="label",name="m",caption="Cycle: " .. m % #shuffle .. "/" .. #shuffle}
-				game.players[1].gui.left.trees.add{type="label",name="total",caption="Total trees: " .. counttrees()}
+				game.players[1].gui.left.trees.add{type="label",name="total",caption="Total trees: " .. count_trees()}
 				game.players[1].gui.left.trees.add{type="label",name="count",caption="Added trees: " .. totalgen}
 				game.players[1].gui.left.trees.add{type="label",name="playermap"}
 			else
 				game.players[1].gui.left.trees.m.caption = "Cycle: " .. m % #shuffle .. "/" .. #shuffle
-				game.players[1].gui.left.trees.total.caption = "Total trees: " .. counttrees()
+				game.players[1].gui.left.trees.total.caption = "Total trees: " .. count_trees()
 				game.players[1].gui.left.trees.count.caption = "Added trees: " .. totalgen
 			end
 			local cc = countPlayerMap()
